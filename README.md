@@ -30,6 +30,6 @@ The cron route requires `Authorization: Bearer <CRON_SECRET>`.
 ## Notes
 
 - Vercel Hobby only allows one cron execution per day, so `vercel.json` is configured for a daily run. Use the protected cron route manually, or upgrade the project plan, if you need higher-frequency collection.
-- The hosted defaults use a 1-day overlap window and the cron route fans out into per-symbol worker invocations so each Vercel function stays within the platform timeout budget.
+- The hosted defaults use a 1-day overlap window and the cron route runs each tracked symbol sequentially within the same invocation, which keeps the full job under the Vercel timeout budget without opening extra database sessions.
 - This is Phase 1 only. It does not implement the local Pumpeii importer.
 - Supabase remains upstream storage only. Backtests and runtime code should continue to read local Postgres.

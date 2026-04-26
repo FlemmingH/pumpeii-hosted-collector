@@ -18,93 +18,44 @@ function getRequestedSymbols(request: NextRequest): string[] {
   return raw ? splitCsv(raw) : [];
 }
 
-async function fanOutBySymbol(request: NextRequest) {
+async function fanOutBySymbol() {
   const env = getCollectorEnv();
   const symbols = splitCsv(env.COLLECTOR_DEFAULT_SYMBOLS);
-  const authorization = `Bearer ${env.CRON_SECRET}`;
 
-  const runs: PromiseSettledResult<{ symbol: string; status: number; payload: unknown }>[] = [];
+  const successes: Array<{ symbol: string; payload: Awaited<ReturnType<typeof runCollection>> }> = [];
+  const failures: Array<{ symbol: string; status: number; error: unknown }> = [];
 
-  for (let index = 0; index < symbols.length; index += 2) {
-    const group = symbols.slice(index, index + 2);
-    const groupRuns = await Promise.allSettled(
-      group.map(async (symbol) => {
-      const url = new URL("/api/cron/coinalyze-collect", request.nextUrl.origin);
-      url.searchParams.set("symbols", symbol);
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          authorization,
-        },
-        cache: "no-store",
-      });
-
-      let payload: unknown;
-
-      try {
-        payload = await response.json();
-      } catch {
-        payload = { ok: false, error: `Non-JSON response (${response.status})` };
-      }
-
-      return {
+  for (const symbol of symbols) {
+    try {
+      const payload = await runCollection({ symbols: [symbol] });
+      successes.push({ symbol, payload });
+    } catch (error) {
+      failures.push({
         symbol,
-        status: response.status,
-        payload,
-      };
-      }),
-    );
-
-    runs.push(...groupRuns);
+        status: 500,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
-
-  const failures = runs.flatMap((run, index) => {
-    const symbol = symbols[index];
-
-    if (run.status === "rejected") {
-      return [{ symbol, status: 500, error: run.reason instanceof Error ? run.reason.message : String(run.reason) }];
-    }
-
-    if (run.value.status >= 400) {
-      return [{ symbol, status: run.value.status, error: run.value.payload }];
-    }
-
-    return [];
-  });
 
   if (failures.length > 0) {
     return NextResponse.json(
       {
         ok: false,
         mode: "fanout",
-        error: "One or more symbol workers failed",
+        error: "One or more symbol runs failed",
         failures,
       },
       { status: 500 },
     );
   }
 
-  const successes = runs
-    .filter((run): run is PromiseFulfilledResult<{ symbol: string; status: number; payload: unknown }> => run.status === "fulfilled")
-    .map((run) => run.value);
-
   const rowsUpserted = successes.reduce((total, run) => {
-    if (typeof run.payload === "object" && run.payload !== null && "rows_upserted" in run.payload) {
-      const rows = run.payload.rows_upserted;
-      return total + (typeof rows === "number" ? rows : 0);
-    }
-
-    return total;
+    return total + run.payload.rows_upserted;
   }, 0);
 
   const marketsMatched = successes.reduce((total, run) => {
-    if (typeof run.payload === "object" && run.payload !== null && "markets_matched" in run.payload) {
-      const markets = run.payload.markets_matched;
-      return total + (typeof markets === "number" ? markets : 0);
-    }
-
-    return total;
+    return total + run.payload.markets_matched;
   }, 0);
 
   return NextResponse.json({
@@ -113,7 +64,7 @@ async function fanOutBySymbol(request: NextRequest) {
     symbols,
     markets_matched: marketsMatched,
     rows_upserted: rowsUpserted,
-    runs: successes.map((run) => run.payload),
+    runs: successes.map((run) => ({ ok: true, ...run.payload })),
   });
 }
 
@@ -126,7 +77,7 @@ export async function POST(request: NextRequest) {
 
   try {
     if (requestedSymbols.length === 0) {
-      return fanOutBySymbol(request);
+      return fanOutBySymbol();
     }
 
     const result = await runCollection({ symbols: requestedSymbols });
