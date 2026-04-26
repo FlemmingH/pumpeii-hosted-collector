@@ -12,6 +12,7 @@ import {
 import { getCollectorEnv } from "@/lib/env";
 
 const FUTURE_MARKETS_TTL_MS = 60_000;
+const MAX_MARKETS_WITH_RETRY = 18;
 
 let futureMarketsCache:
   | {
@@ -100,10 +101,13 @@ async function fetchLiquidationHistoryAdaptive(args: {
       timeframe: args.timeframe,
       start: args.start,
       end: args.end,
-      requestOptions: {
-        ...args.requestOptions,
-        maxRetries: 0,
-      },
+      requestOptions:
+        args.markets.length > MAX_MARKETS_WITH_RETRY
+          ? {
+              ...args.requestOptions,
+              maxRetries: 0,
+            }
+          : args.requestOptions,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
