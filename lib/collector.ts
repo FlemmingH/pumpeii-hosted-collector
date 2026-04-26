@@ -109,9 +109,11 @@ async function fetchLiquidationHistoryAdaptive(args: {
   }
 }
 
-export async function runCollection() {
+export async function runCollection(options?: { symbols?: string[] }) {
   const env = getCollectorEnv();
-  const symbols = splitCsv(env.COLLECTOR_DEFAULT_SYMBOLS);
+  const symbols = options?.symbols?.length
+    ? options.symbols
+    : splitCsv(env.COLLECTOR_DEFAULT_SYMBOLS);
   const timeframe = env.COLLECTOR_DEFAULT_TIMEFRAME;
   const { start, end } = defaultWindow(env.COLLECTOR_OVERLAP_DAYS);
   const requestOptions = {
