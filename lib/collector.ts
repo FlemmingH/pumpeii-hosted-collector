@@ -11,6 +11,15 @@ import {
 } from "@/lib/coinalyze";
 import { getCollectorEnv } from "@/lib/env";
 
+const FUTURE_MARKETS_TTL_MS = 60_000;
+
+let futureMarketsCache:
+  | {
+      fetchedAt: number;
+      markets: Awaited<ReturnType<typeof fetchFutureMarkets>>;
+    }
+  | undefined;
+
 function sleep(delayMs: number): Promise<void> {
   if (delayMs <= 0) {
     return Promise.resolve();
@@ -109,6 +118,24 @@ async function fetchLiquidationHistoryAdaptive(args: {
   }
 }
 
+async function getFutureMarketsCached(args: {
+  apiKey: string;
+  requestOptions: Parameters<typeof fetchFutureMarkets>[1];
+}) {
+  const now = Date.now();
+
+  if (futureMarketsCache && now - futureMarketsCache.fetchedAt < FUTURE_MARKETS_TTL_MS) {
+    return futureMarketsCache.markets;
+  }
+
+  const markets = await fetchFutureMarkets(args.apiKey, args.requestOptions);
+  futureMarketsCache = {
+    fetchedAt: now,
+    markets,
+  };
+  return markets;
+}
+
 export async function runCollection(options?: { symbols?: string[] }) {
   const env = getCollectorEnv();
   const symbols = options?.symbols?.length
@@ -131,7 +158,10 @@ export async function runCollection(options?: { symbols?: string[] }) {
   });
 
   try {
-    const allMarkets = await fetchFutureMarkets(env.COINALYZE_API_KEY, requestOptions);
+    const allMarkets = await getFutureMarketsCached({
+      apiKey: env.COINALYZE_API_KEY,
+      requestOptions,
+    });
     const selectedBySymbol = selectMarkets(allMarkets, symbols);
     const selectedMarkets = Object.values(selectedBySymbol).flat();
 
