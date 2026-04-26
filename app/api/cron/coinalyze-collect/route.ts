@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { splitCsv } from "@/lib/coinalyze";
+import { chunk, splitCsv } from "@/lib/coinalyze";
 import { getCollectorEnv } from "@/lib/env";
 import { runCollection } from "@/lib/collector";
 import { prisma } from "@/lib/prisma";
@@ -8,6 +8,8 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+const SYMBOL_GROUP_SIZE = 2;
 
 function sleep(delayMs: number): Promise<void> {
   if (delayMs <= 0) {
@@ -32,44 +34,45 @@ function getRequestedSymbols(request: NextRequest): string[] {
 async function fanOutBySymbol() {
   const env = getCollectorEnv();
   const symbols = splitCsv(env.COLLECTOR_DEFAULT_SYMBOLS);
+  const symbolGroups = chunk(symbols, SYMBOL_GROUP_SIZE);
 
-  const successes: Array<{ symbol: string; payload: Awaited<ReturnType<typeof runCollection>> }> = [];
-  const failures: Array<{ symbol: string; status: number; error: unknown }> = [];
+  const successes: Array<{ symbols: string[]; payload: Awaited<ReturnType<typeof runCollection>> }> = [];
+  const failures: Array<{ symbols: string[]; status: number; error: unknown }> = [];
 
-  for (const symbol of symbols) {
-    const symbolStartedAt = Date.now();
+  for (const [index, symbolGroup] of symbolGroups.entries()) {
+    const groupStartedAt = Date.now();
 
     try {
-      const payload = await runCollection({ symbols: [symbol] });
+      const payload = await runCollection({ symbols: symbolGroup });
       console.info(
         JSON.stringify({
           scope: "coinalyze_collector",
-          event: "symbol_complete",
-          symbol,
-          duration_ms: Date.now() - symbolStartedAt,
+          event: "symbol_group_complete",
+          symbols: symbolGroup,
+          duration_ms: Date.now() - groupStartedAt,
           markets_matched: payload.markets_matched,
           rows_upserted: payload.rows_upserted,
         }),
       );
-      successes.push({ symbol, payload });
+      successes.push({ symbols: symbolGroup, payload });
     } catch (error) {
       console.error(
         JSON.stringify({
           scope: "coinalyze_collector",
-          event: "symbol_failed",
-          symbol,
-          duration_ms: Date.now() - symbolStartedAt,
+          event: "symbol_group_failed",
+          symbols: symbolGroup,
+          duration_ms: Date.now() - groupStartedAt,
           error: error instanceof Error ? error.message : String(error),
         }),
       );
       failures.push({
-        symbol,
+        symbols: symbolGroup,
         status: 500,
         error: error instanceof Error ? error.message : String(error),
       });
     }
 
-    if (symbol !== symbols.at(-1)) {
+    if (index < symbolGroups.length - 1) {
       await sleep(env.COLLECTOR_BATCH_DELAY_MS);
     }
   }
