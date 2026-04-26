@@ -27,10 +27,31 @@ async function fanOutBySymbol() {
   const failures: Array<{ symbol: string; status: number; error: unknown }> = [];
 
   for (const symbol of symbols) {
+    const symbolStartedAt = Date.now();
+
     try {
       const payload = await runCollection({ symbols: [symbol] });
+      console.info(
+        JSON.stringify({
+          scope: "coinalyze_collector",
+          event: "symbol_complete",
+          symbol,
+          duration_ms: Date.now() - symbolStartedAt,
+          markets_matched: payload.markets_matched,
+          rows_upserted: payload.rows_upserted,
+        }),
+      );
       successes.push({ symbol, payload });
     } catch (error) {
+      console.error(
+        JSON.stringify({
+          scope: "coinalyze_collector",
+          event: "symbol_failed",
+          symbol,
+          duration_ms: Date.now() - symbolStartedAt,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
       failures.push({
         symbol,
         status: 500,

@@ -20,6 +20,16 @@ let futureMarketsCache:
     }
   | undefined;
 
+function logCollectorEvent(event: string, payload: Record<string, unknown>) {
+  console.info(
+    JSON.stringify({
+      scope: "coinalyze_collector",
+      event,
+      ...payload,
+    }),
+  );
+}
+
 function sleep(delayMs: number): Promise<void> {
   if (delayMs <= 0) {
     return Promise.resolve();
@@ -90,13 +100,22 @@ async function fetchLiquidationHistoryAdaptive(args: {
       timeframe: args.timeframe,
       start: args.start,
       end: args.end,
-      requestOptions: args.requestOptions,
+      requestOptions: {
+        ...args.requestOptions,
+        maxRetries: 0,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!message.includes("429") || args.markets.length <= 1) {
       throw error;
     }
+
+    logCollectorEvent("liquidation_history_split", {
+      market_count: args.markets.length,
+      timeframe: args.timeframe,
+      reason: message,
+    });
 
     const midpoint = Math.ceil(args.markets.length / 2);
     const leftMarkets = args.markets.slice(0, midpoint);
@@ -141,6 +160,7 @@ export async function runCollection(options?: { symbols?: string[] }) {
   const symbols = options?.symbols?.length
     ? options.symbols
     : splitCsv(env.COLLECTOR_DEFAULT_SYMBOLS);
+  const startedAt = Date.now();
   const timeframe = env.COLLECTOR_DEFAULT_TIMEFRAME;
   const { start, end } = defaultWindow(env.COLLECTOR_OVERLAP_DAYS);
   const requestOptions = {
@@ -208,6 +228,13 @@ export async function runCollection(options?: { symbols?: string[] }) {
     const mergedRows = mergeBars(rows);
     const rowsUpserted = await upsertBars(mergedRows);
 
+    logCollectorEvent("run_complete", {
+      duration_ms: Date.now() - startedAt,
+      symbols,
+      markets_matched: selectedMarkets.length,
+      rows_upserted: rowsUpserted,
+    });
+
     await prisma.syncRun.update({
       where: { id: syncRun.id },
       data: {
@@ -229,6 +256,12 @@ export async function runCollection(options?: { symbols?: string[] }) {
     };
   } catch (error) {
     const note = error instanceof Error ? error.message : "Collector run failed";
+
+    logCollectorEvent("run_failed", {
+      duration_ms: Date.now() - startedAt,
+      symbols,
+      error: note,
+    });
 
     await prisma.syncRun.update({
       where: { id: syncRun.id },
