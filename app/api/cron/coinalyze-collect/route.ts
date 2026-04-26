@@ -9,6 +9,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+function sleep(delayMs: number): Promise<void> {
+  if (delayMs <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
 function isAuthorized(request: NextRequest): boolean {
   const { CRON_SECRET } = getCollectorEnv();
   return request.headers.get("authorization") === `Bearer ${CRON_SECRET}`;
@@ -57,6 +67,10 @@ async function fanOutBySymbol() {
         status: 500,
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+
+    if (symbol !== symbols.at(-1)) {
+      await sleep(env.COLLECTOR_BATCH_DELAY_MS);
     }
   }
 
