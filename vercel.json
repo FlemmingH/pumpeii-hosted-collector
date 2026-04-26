@@ -1,8 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/cron/coinalyze-collect",
+      "path": "/api/cron/coinalyze-collect/group/0",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/coinalyze-collect/group/1",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/coinalyze-collect/group/2",
+      "schedule": "0 2 * * *"
     }
   ]
 }
