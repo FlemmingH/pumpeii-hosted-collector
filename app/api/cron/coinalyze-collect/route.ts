@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { splitCsv } from "@/lib/coinalyze";
 import { getCollectorEnv } from "@/lib/env";
 import { runCollection } from "@/lib/collector";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
 
   try {
     if (requestedSymbols.length === 0) {
-      return fanOutBySymbol();
+      return await fanOutBySymbol();
     }
 
     const result = await runCollection({ symbols: requestedSymbols });
@@ -85,5 +86,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Collector run failed";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  } finally {
+    await prisma.$disconnect();
   }
 }
