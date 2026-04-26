@@ -1,0 +1,45 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["collector"]
+}
+
+model CoinalyzeLiquidationBar {
+  symbol              String   @map("symbol")
+  timeframe           String   @map("timeframe")
+  timestamp           DateTime @db.Timestamptz(6) @map("timestamp")
+  longLiquidatedUsd   Decimal  @default(0) @db.Decimal(30, 10) @map("long_liquidated_usd")
+  shortLiquidatedUsd  Decimal  @default(0) @db.Decimal(30, 10) @map("short_liquidated_usd")
+  longLiquidatedQty   Decimal  @default(0) @db.Decimal(30, 10) @map("long_liquidated_qty")
+  shortLiquidatedQty  Decimal  @default(0) @db.Decimal(30, 10) @map("short_liquidated_qty")
+  liquidationCount    Int      @default(0) @map("liquidation_count")
+  source              String   @default("coinalyze_remote") @map("source")
+  marketCount         Int      @default(0) @map("market_count")
+  providerMarkets     Json     @default(dbgenerated("'[]'::jsonb")) @map("provider_markets")
+  createdAt           DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@id([symbol, timeframe, timestamp])
+  @@map("coinalyze_liquidation_bars")
+  @@schema("collector")
+}
+
+model SyncRun {
+  id          BigInt    @id @default(autoincrement())
+  startedAt   DateTime  @default(now()) @db.Timestamptz(6) @map("started_at")
+  finishedAt  DateTime? @db.Timestamptz(6) @map("finished_at")
+  status      String    @map("status")
+  windowFrom  DateTime  @db.Timestamptz(6) @map("window_from")
+  windowTo    DateTime  @db.Timestamptz(6) @map("window_to")
+  rowsUpserted Int      @default(0) @map("rows_upserted")
+  note        String?   @map("note")
+
+  @@map("sync_runs")
+  @@schema("collector")
+}
